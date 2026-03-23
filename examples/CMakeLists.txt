@@ -16,12 +16,26 @@ set(PROTO_HDRS ${CMAKE_CURRENT_BINARY_DIR}/rpc_message.pb.h)
 # Example executable
 add_executable(echo_server main.cpp ${PROTO_SRCS} ${PROTO_HDRS})
 
-target_include_directories(echo_server PRIVATE 
-    ${CMAKE_CURRENT_BINARY_DIR} 
+target_include_directories(echo_server PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${PROTOBUF_INCLUDE_DIRS}
 )
 
-target_link_libraries(echo_server PRIVATE 
+target_link_libraries(echo_server PRIVATE
+    crpc
+    ${PROTOBUF_LIBRARIES}
+)
+
+# Latency benchmark client
+add_executable(latency_bench latency_bench.cpp ${PROTO_SRCS} ${PROTO_HDRS})
+
+target_include_directories(latency_bench PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${PROTOBUF_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(latency_bench PRIVATE
     crpc
     ${PROTOBUF_LIBRARIES}
 )
