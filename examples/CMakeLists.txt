@@ -39,3 +39,17 @@ target_link_libraries(latency_bench PRIVATE
     crpc
     ${PROTOBUF_LIBRARIES}
 )
+
+# Raw echo server (no protobuf, pure framework I/O)
+add_executable(raw_server raw_server.cpp)
+
+target_include_directories(raw_server PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(raw_server PRIVATE crpc)
+
+# Raw latency benchmark (no protobuf, pure framework I/O)
+add_executable(raw_bench raw_bench.cpp)
+
+target_link_libraries(raw_bench PRIVATE crpc)
