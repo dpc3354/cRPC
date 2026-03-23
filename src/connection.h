@@ -32,8 +32,14 @@ private:
     int fd_;
     bool closed_;
 
-    Buffer read_buffer_;
-    Buffer write_buffer_;
+    // Each connection borrows fixed registered buffer slots for reads and writes
+    int read_buf_idx_;    // -1 if unavailable
+    char* read_fixed_ptr_;
+    int write_buf_idx_;   // -1 if unavailable
+    char* write_fixed_ptr_;
+
+    Buffer read_buffer_;     // staging for protocol parsing
+    Buffer write_buffer_;    // dynamic write staging
     bool is_writing_;
 
     MessageCallback message_cb_;
