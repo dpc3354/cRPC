@@ -53,3 +53,14 @@ target_link_libraries(raw_server PRIVATE crpc)
 add_executable(raw_bench raw_bench.cpp)
 
 target_link_libraries(raw_bench PRIVATE crpc)
+
+# Coroutine echo server (C++20 coroutines + protobuf)
+add_executable(coro_echo coro_echo.cpp ${PROTO_SRCS} ${PROTO_HDRS})
+
+target_include_directories(coro_echo PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${PROTOBUF_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(coro_echo PRIVATE crpc ${PROTOBUF_LIBRARIES})
