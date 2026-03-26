@@ -88,6 +88,34 @@ struct WriteAwaitable {
 };
 
 // ---------------------------------------------------------------------------
+// SleepAwaitable — suspends the coroutine for `ms` milliseconds using an
+// io_uring IORING_OP_TIMEOUT SQE.  The coroutine frame keeps `ts` alive
+// while suspended, so the kernel pointer remains valid.
+//
+// Usage:
+//   co_await AsyncSleep(ctx, 50);   // suspend 50 ms, other coroutines run
+// ---------------------------------------------------------------------------
+struct SleepAwaitable {
+    IoContext*         ctx;
+    __kernel_timespec  ts;
+    int                result = 0;
+
+    bool await_ready() noexcept { return false; }
+
+    void await_suspend(std::coroutine_handle<> h) noexcept {
+        io_uring_sqe* sqe = io_uring_get_sqe(ctx->GetRing());
+        io_uring_prep_timeout(sqe, &ts, 0, 0);
+        ctx->Submit(sqe, h, &result);
+    }
+
+    void await_resume() noexcept {}
+};
+
+inline SleepAwaitable AsyncSleep(IoContext* ctx, int ms) {
+    return SleepAwaitable{ctx, {ms / 1000, (long long)(ms % 1000) * 1'000'000}};
+}
+
+// ---------------------------------------------------------------------------
 // Task — fire-and-forget coroutine type for connection handlers.
 //
 // - initial_suspend = never  → coroutine starts immediately on call

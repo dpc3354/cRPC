@@ -17,15 +17,32 @@ void HandleSigInt(int) {
     for (auto* ctx : g_all_ctxs) ctx->Stop();
 }
 
-// Processes one RPC request synchronously and pushes the encoded response
-// into the shared queue.
-Task handleRequest(RpcHeader header, std::vector<char> payload,
+// ---------------------------------------------------------------------------
+// Demonstrates true concurrent in-flight requests on a single connection.
+//
+// co_await AsyncSleep() is a real io_uring suspend point.  While this
+// coroutine waits, the read loop keeps parsing and dispatching new requests,
+// so N requests genuinely overlap in time instead of being processed serially.
+//
+// In a real service, replace AsyncSleep with:
+//   co_await db.query(...)         — async database call
+//   co_await rpc_client.call(...)  — downstream RPC
+//   co_await file.read(...)        — async file IO
+// ---------------------------------------------------------------------------
+Task handleRequest(IoContext* ctx, RpcHeader header, std::vector<char> payload,
                    std::shared_ptr<ResponseQueue> queue) {
     crpc::EchoRequest req;
     if (!req.ParseFromArray(payload.data(), payload.size())) {
-        LOG_ERROR("[coro] failed to parse EchoRequest seq=" << header.seq_id);
+        LOG_ERROR("[async] failed to parse EchoRequest seq=" << header.seq_id);
         co_return;
     }
+
+    LOG_INFO("[async] seq=" << header.seq_id << " start async work");
+
+    // Suspend here — read loop continues dispatching other requests.
+    co_await AsyncSleep(ctx, 10);  // simulate 10 ms async work
+
+    LOG_INFO("[async] seq=" << header.seq_id << " async work done");
 
     crpc::EchoResponse resp;
     resp.set_message("Echo: " + req.message());
@@ -33,7 +50,7 @@ Task handleRequest(RpcHeader header, std::vector<char> payload,
     resp.SerializeToString(&resp_bytes);
 
     RpcHeader resp_header  = header;
-    resp_header.msg_type   = 1;  // Response
+    resp_header.msg_type   = 1;
 
     Buffer write_buf;
     Protocol::EncodeMessage(write_buf, resp_header, resp_bytes);
@@ -43,8 +60,6 @@ Task handleRequest(RpcHeader header, std::vector<char> payload,
     queue->Push(std::move(data));
 }
 
-// Sole writer on this connection. Drains ResponseQueue one item at a time;
-// exits when the queue is closed and empty or when the connection drops.
 Task writeLoop(std::shared_ptr<CoroConnection> conn,
                std::shared_ptr<ResponseQueue> queue) {
     while (true) {
@@ -55,16 +70,10 @@ Task writeLoop(std::shared_ptr<CoroConnection> conn,
     }
 }
 
-// ---------------------------------------------------------------------------
-// Read loop: spawns writeLoop as a sibling coroutine sharing the queue, then
-// dispatches one handleRequest Task per incoming RPC frame.
-//
-// Writes are never interleaved — writeLoop is the only caller of Write().
-// ---------------------------------------------------------------------------
 Task handleConnection(std::shared_ptr<CoroConnection> conn) {
-    LOG_INFO("[coro] connection fd=" << conn->Fd());
+    LOG_INFO("[async] connection fd=" << conn->Fd());
     auto queue = std::make_shared<ResponseQueue>();
-    writeLoop(conn, queue);  // fire-and-forget; suspends at first Pop()
+    writeLoop(conn, queue);
 
     while (true) {
         int n = co_await conn->Read();
@@ -77,7 +86,7 @@ Task handleConnection(std::shared_ptr<CoroConnection> conn) {
             if (!payload_opt) break;
 
             if (header.msg_type == 0)
-                handleRequest(header, std::move(*payload_opt), queue);
+                handleRequest(conn->GetIoContext(), header, std::move(*payload_opt), queue);
         }
     }
     queue->Close();
@@ -89,7 +98,7 @@ int main() {
 
     try {
         int nThreads = std::thread::hardware_concurrency();
-        LOG_INFO("Starting coro_echo server with " << nThreads << " threads.");
+        LOG_INFO("Starting coro_echo_async server with " << nThreads << " threads.");
 
         std::vector<std::thread> threads;
         std::vector<std::unique_ptr<IoContext>> ctxs(nThreads);

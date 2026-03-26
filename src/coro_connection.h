@@ -35,6 +35,7 @@ public:
 
     Buffer& GetReadBuffer() { return read_buffer_; }
     int Fd() const { return fd_; }
+    IoContext* GetIoContext() const { return io_ctx_; }
     bool IsClosed() const { return closed_; }
     void Close();
 
