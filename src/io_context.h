@@ -54,6 +54,7 @@ private:
     std::mutex buf_mutex_;
 
     RequestData* req_pool_head_ = nullptr;
+    int in_flight_ = 0;   // count of submitted-but-not-yet-completed SQEs
 
     bool files_enabled_ = false;
     int  max_fixed_files_ = 0;

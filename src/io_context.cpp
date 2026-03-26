@@ -127,6 +127,7 @@ void IoContext::FreeRequestData(RequestData* req) {
 void IoContext::Submit(io_uring_sqe* sqe, std::coroutine_handle<> handle, int* result) {
     auto* req = AllocRequestData(handle, result);
     io_uring_sqe_set_data(sqe, req);
+    ++in_flight_;
 }
 
 void IoContext::Run() {
@@ -150,11 +151,45 @@ void IoContext::Run() {
                 *req->result = cqe->res;
                 auto handle = req->handle;
                 FreeRequestData(req);
+                --in_flight_;
                 handle.resume();
             }
             ++count;
         }
         io_uring_cq_advance(&ring_, count);
+    }
+
+    // Drain phase: cancel all in-flight SQEs so suspended coroutines are
+    // resumed with -ECANCELED, their frames freed, and held resources
+    // (CoroConnection, fixed buffers, fixed file slots) properly released.
+    if (in_flight_ > 0) {
+        io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
+        if (sqe) {
+            io_uring_prep_cancel(sqe, nullptr,
+                                 IORING_ASYNC_CANCEL_ALL | IORING_ASYNC_CANCEL_ANY);
+            io_uring_sqe_set_data(sqe, nullptr);  // not tracked in in_flight_
+            io_uring_submit(&ring_);
+        }
+
+        struct __kernel_timespec drain_ts{0, 50'000'000};  // 50 ms per iteration
+        while (in_flight_ > 0) {
+            int ret = io_uring_submit_and_wait_timeout(&ring_, &cqe, 1, &drain_ts, nullptr);
+            if (ret < 0) break;
+
+            unsigned head, count = 0;
+            io_uring_for_each_cqe(&ring_, head, cqe) {
+                if (cqe->user_data) {
+                    auto* req = reinterpret_cast<RequestData*>(cqe->user_data);
+                    *req->result = cqe->res;
+                    auto handle = req->handle;
+                    FreeRequestData(req);
+                    --in_flight_;
+                    handle.resume();
+                }
+                ++count;
+            }
+            io_uring_cq_advance(&ring_, count);
+        }
     }
     LOG_INFO("IoContext event loop stopped.");
 }

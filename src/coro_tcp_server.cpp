@@ -65,7 +65,7 @@ Task CoroTcpServer::AcceptLoop() {
         // Suspend here; resume when a new client connects (or listen_fd_ is closed)
         int client_fd = co_await IoAwaitable{io_ctx_, sqe};
         if (client_fd < 0) {
-            if (running_)
+            if (running_ && -client_fd != ECANCELED)
                 LOG_ERROR("CoroTcpServer: accept failed: " << strerror(-client_fd));
             break;
         }
