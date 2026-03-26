@@ -45,6 +45,7 @@ private:
     int fd_;
     bool closed_;
 
+    int  fixed_file_idx_;
     int  read_buf_idx_;
     char* read_fixed_ptr_;
     int  write_buf_idx_;

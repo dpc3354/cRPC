@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <cstring>
 #include <cstdlib>
+#include <numeric>
 
 IoContext::IoContext(unsigned entries, bool enable_registered_bufs,
                    size_t buf_count, size_t buf_size) : running_(false) {
@@ -38,12 +39,27 @@ IoContext::IoContext(unsigned entries, bool enable_registered_bufs,
             }
         }
     }
+
+    // Fixed file table: pre-register 1024 empty slots (-1 means unused)
+    max_fixed_files_ = 1024;
+    std::vector<int> empty_fds(max_fixed_files_, -1);
+    if (io_uring_register_files(&ring_, empty_fds.data(), max_fixed_files_) == 0) {
+        files_enabled_ = true;
+        free_file_indices_.resize(max_fixed_files_);
+        std::iota(free_file_indices_.begin(), free_file_indices_.end(), 0);
+        LOG_INFO("Registered fixed file table with " << max_fixed_files_ << " slots.");
+    } else {
+        LOG_WARN("io_uring_register_files failed, fixed file optimization disabled.");
+    }
 }
 
 IoContext::~IoContext() {
     Stop();
     if (!iovecs_.empty()) {
         io_uring_unregister_buffers(&ring_);
+    }
+    if (files_enabled_) {
+        io_uring_unregister_files(&ring_);
     }
     io_uring_queue_exit(&ring_);
 
@@ -70,6 +86,23 @@ int IoContext::AllocateBuffer(char** out_ptr) {
 void IoContext::FreeBuffer(int idx) {
     std::lock_guard<std::mutex> lock(buf_mutex_);
     free_buf_indices_.push_back(idx);
+}
+
+int IoContext::RegisterFile(int fd) {
+    if (!files_enabled_ || free_file_indices_.empty()) return -1;
+    int idx = free_file_indices_.back();
+    free_file_indices_.pop_back();
+    if (io_uring_register_files_update(&ring_, idx, &fd, 1) < 0) {
+        free_file_indices_.push_back(idx);
+        return -1;
+    }
+    return idx;
+}
+
+void IoContext::UnregisterFile(int idx) {
+    int neg = -1;
+    io_uring_register_files_update(&ring_, idx, &neg, 1);
+    free_file_indices_.push_back(idx);
 }
 
 RequestData* IoContext::AllocRequestData(std::coroutine_handle<> handle, int* result) {
