@@ -100,12 +100,13 @@ void IoContext::Run() {
     running_ = true;
     LOG_INFO("IoContext event loop started.");
 
+    struct __kernel_timespec ts{0, 200'000'000};  // 200ms
     io_uring_cqe* cqe;
     while (running_) {
-        int ret = io_uring_submit_and_wait(&ring_, 1);
+        int ret = io_uring_submit_and_wait_timeout(&ring_, &cqe, 1, &ts, nullptr);
         if (ret < 0) {
-            if (-ret == EINTR) continue;
-            LOG_ERROR("io_uring_submit_and_wait failed: " << strerror(-ret));
+            if (-ret == EINTR || -ret == ETIME) continue;
+            LOG_ERROR("io_uring_submit_and_wait_timeout failed: " << strerror(-ret));
             break;
         }
 

@@ -1,6 +1,7 @@
 #include "coro_tcp_server.h"
 #include "logger.h"
 #include <arpa/inet.h>
+#include <asm-generic/socket.h>
 #include <cstring>
 #include <stdexcept>
 #include <sys/socket.h>
@@ -14,6 +15,7 @@ CoroTcpServer::CoroTcpServer(IoContext* io_ctx, uint16_t port)
 
     int opt = 1;
     ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
 
     struct sockaddr_in addr{};
     addr.sin_family      = AF_INET;

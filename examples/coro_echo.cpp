@@ -4,12 +4,14 @@
 #include "protocol.h"
 #include "logger.h"
 #include "rpc_message.pb.h"
+#include <memory>
 #include <signal.h>
+#include <vector>
 
-IoContext* g_io_ctx = nullptr;
+static std::vector<IoContext*> g_all_ctxs;
 
 void HandleSigInt(int) {
-    if (g_io_ctx) g_io_ctx->Stop();
+    for (auto* ctx : g_all_ctxs) ctx->Stop();
 }
 
 // ---------------------------------------------------------------------------
@@ -67,15 +69,24 @@ int main() {
     GOOGLE_PROTOBUF_VERIFY_VERSION;
 
     try {
-        IoContext io_ctx;
-        g_io_ctx = &io_ctx;
+        int nThreads = std::thread::hardware_concurrency();
+        LOG_INFO("Starting coro_echo server with " << nThreads << " threads.");
 
-        CoroTcpServer server(&io_ctx, 8080);
-        server.SetConnectionHandler(handleConnection);
-        server.Start();
+        std::vector<std::thread> threads;
+        std::vector<std::unique_ptr<IoContext>> ctxs(nThreads);
 
-        io_ctx.Run();
+        for (int i = 0; i < nThreads; ++i) {
+            ctxs[i] = std::make_unique<IoContext>();
+            g_all_ctxs.push_back(ctxs[i].get());
 
+            threads.emplace_back([ctx = ctxs[i].get()] {
+                CoroTcpServer server(ctx, 8080);
+                server.SetConnectionHandler(handleConnection);
+                server.Start();
+                ctx->Run(); });
+        }
+        for (auto& t : threads) t.join();
+        
     } catch (const std::exception& e) {
         LOG_ERROR("Exception: " << e.what());
     }

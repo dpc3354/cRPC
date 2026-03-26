@@ -52,6 +52,7 @@ void CoroConnection::Close() {
         write_fixed_ptr_ = nullptr;
     }
     ::close(fd_);
+    LOG_INFO("CoroConnection fd=" << fd_ << " closed.");
 }
 
 ReadAwaitable CoroConnection::Read() {
