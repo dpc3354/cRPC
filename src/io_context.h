@@ -1,7 +1,7 @@
 #pragma once
 
 #include <liburing.h>
-#include <functional>
+#include <coroutine>
 #include <atomic>
 #include <vector>
 #include <mutex>
@@ -9,8 +9,9 @@
 #include "logger.h"
 
 struct RequestData {
-    std::function<void(int res)> callback;
-    RequestData* next_free = nullptr; // intrusive free-list link
+    std::coroutine_handle<> handle;
+    int* result;
+    RequestData* next_free = nullptr;  // intrusive free-list link
 };
 
 class IoContext {
@@ -27,7 +28,7 @@ public:
 
     io_uring* GetRing() { return &ring_; }
 
-    void Submit(io_uring_sqe* sqe, std::function<void(int res)> callback);
+    void Submit(io_uring_sqe* sqe, std::coroutine_handle<> handle, int* result);
 
     size_t BufSize() const { return buf_size_; }
 
@@ -35,11 +36,10 @@ public:
     int AllocateBuffer(char** out_ptr);
     void FreeBuffer(int index);
 
-    // RequestData object pool (free list, single-threaded event loop only)
-    RequestData* AllocRequestData(std::function<void(int)> cb);
+private:
+    RequestData* AllocRequestData(std::coroutine_handle<> handle, int* result);
     void FreeRequestData(RequestData* req);
 
-private:
     io_uring ring_;
     std::atomic<bool> running_;
 
@@ -49,5 +49,5 @@ private:
     std::vector<int> free_buf_indices_;
     std::mutex buf_mutex_;
 
-    RequestData* req_pool_head_ = nullptr; // free-list head
+    RequestData* req_pool_head_ = nullptr;
 };

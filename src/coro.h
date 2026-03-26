@@ -26,10 +26,7 @@ struct IoAwaitable {
 
     void await_suspend(std::coroutine_handle<> h) noexcept {
         handle = h;
-        ctx->Submit(sqe, [this](int res) {
-            result = res;
-            handle.resume();
-        });
+        ctx->Submit(sqe, h, &result);
     }
 
     int await_resume() noexcept { return result; }
@@ -51,10 +48,7 @@ struct ReadAwaitable {
 
     void await_suspend(std::coroutine_handle<> h) noexcept {
         handle = h;
-        ctx->Submit(sqe, [this](int res) {
-            result = res;
-            handle.resume();
-        });
+        ctx->Submit(sqe, h, &result);
     }
 
     int await_resume() noexcept {
@@ -83,10 +77,7 @@ struct WriteAwaitable {
 
     void await_suspend(std::coroutine_handle<> h) noexcept {
         handle = h;
-        ctx->Submit(sqe, [this](int res) {
-            result = res;
-            handle.resume();
-        });
+        ctx->Submit(sqe, h, &result);
     }
 
     int await_resume() noexcept {
