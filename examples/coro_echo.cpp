@@ -5,6 +5,7 @@
 #include "logger.h"
 #include "rpc_message.pb.h"
 #include <memory>
+#include <sched.h>
 #include <signal.h>
 #include <vector>
 
@@ -79,7 +80,12 @@ int main() {
             ctxs[i] = std::make_unique<IoContext>();
             g_all_ctxs.push_back(ctxs[i].get());
 
-            threads.emplace_back([ctx = ctxs[i].get()] {
+            threads.emplace_back([ctx = ctxs[i].get(), i] {
+                cpu_set_t cpus;
+                CPU_ZERO(&cpus);
+                CPU_SET(i, &cpus);
+                pthread_setaffinity_np(pthread_self(), sizeof(cpus), &cpus);
+
                 CoroTcpServer server(ctx, 8080);
                 server.SetConnectionHandler(handleConnection);
                 server.Start();
