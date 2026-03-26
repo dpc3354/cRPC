@@ -76,16 +76,24 @@ Each message is prefixed with a 10-byte header (network byte order):
 | Payload | 256 bytes |
 | Workload | 32 concurrent connections, 50 000 requests per connection |
 
-**Optimization progression** (32 client threads × 50 000 requests = 1.6 M total)
+**Optimization progression** (32 client threads × 50 000 requests = 1.6 M total, Debug build)
 
 | Configuration | req/s | p50 | p90 | p99 | p99.9 |
 |---------------|------:|----:|----:|----:|------:|
 | Single-threaded server (baseline) | 58,720 | 554 µs | 585 µs | 746 µs | — |
 | + SO_REUSEPORT multi-threaded | 229,658 | 82 µs | 197 µs | 342 µs | 1866 µs |
 | + CPU affinity (pin per core) | 256,195 | 88 µs | 172 µs | 424 µs | 1663 µs |
-| + Fixed registered files | 244,722 | 88 µs | 173 µs | **295 µs** | **1305 µs** |
+| + Fixed registered files | 244,722 | 88 µs | 173 µs | 295 µs | 1305 µs |
 
-SO_REUSEPORT removes the single-threaded server bottleneck (4× throughput gain). CPU affinity reduces scheduler migration overhead and improves throughput further. Fixed registered files eliminates per-operation fd table RCU lookups, which primarily benefits tail latency (p99 −30%, p99.9 −21%).
+SO_REUSEPORT removes the single-threaded server bottleneck (4× throughput gain). CPU affinity reduces scheduler migration overhead. Fixed registered files eliminates per-operation fd table RCU lookups, primarily benefiting tail latency (p99 −30%, p99.9 −21% vs previous step).
+
+**Release build — final configuration** (`-DCMAKE_BUILD_TYPE=Release`, same workload)
+
+| req/s | p50 | p90 | p99 | p99.9 | avg |
+|------:|----:|----:|----:|------:|----:|
+| 331,784 | 66 µs | 128 µs | 231 µs | 713 µs | 76.6 µs |
+
+Release optimizations (coroutine frame inlining, protobuf serialization) add a further ~35% throughput gain and halve tail latency vs the Debug build.
 
 ## Writing a Server
 
